@@ -90,12 +90,18 @@ ONLY_LRT = False
 START_STATION, END_STATION, ROUTE_NAME, DEL_ROUTE_NAME, SET_MAP_LINK = range(5)
 
 
-def load_station_data():
-    if not os.path.exists(LOCAL_FILE_PATH):
+def load_station_data(link=None):
+    if link is None:
+        link = LINK
+    
+    link_hash = hashlib.md5(link.encode('utf-8')).hexdigest()
+    local_file_path = os.path.join('mtr-pathfinder', f'mtr-station-data-{link_hash}-mtr4-v4.json')
+    
+    if not os.path.exists(local_file_path):
         return None
     
     try:
-        with open(LOCAL_FILE_PATH, 'r', encoding='utf-8') as f:
+        with open(local_file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
         print(f'加载车站数据失败: {e}')
@@ -816,11 +822,22 @@ async def station_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     station_name = ' '.join(context.args)
     logger.info(f'用户 {user_id} 查询车站信息：{station_name}')
     
-    data = load_station_data()
+    settings = get_user_settings(user_id)
+    map_link = settings['MAP_LINK']
     
-    if not data:
-        logger.warning(f'用户 {user_id} 车站数据未加载')
-        await update.message.reply_text('车站数据未加载，请先查询一次路线。')
+    link_hash = hashlib.md5(map_link.encode('utf-8')).hexdigest()
+    local_file_path = os.path.join('mtr-pathfinder', f'mtr-station-data-{link_hash}-mtr4-v4.json')
+    
+    logger.info(f'用户 {user_id} 更新车站数据：{map_link}')
+    await update.message.reply_text('正在更新车站数据，请稍候...')
+    
+    try:
+        from mtr_pathfinder_v4 import fetch_data
+        data = fetch_data(map_link, local_file_path, MAX_WILD_BLOCKS)
+        logger.info(f'用户 {user_id} 车站数据更新成功')
+    except Exception as e:
+        logger.error(f'用户 {user_id} 车站数据更新失败：{e}')
+        await update.message.reply_text('更新车站数据失败，请稍后重试。')
         return
     
     station_id = station_name_to_id(data, station_name, STATION_TABLE)
@@ -884,11 +901,22 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyword = ' '.join(context.args).lower()
     logger.info(f'用户 {user_id} 搜索：{keyword}')
     
-    data = load_station_data()
+    settings = get_user_settings(user_id)
+    map_link = settings['MAP_LINK']
     
-    if not data:
-        logger.warning(f'用户 {user_id} 车站数据未加载')
-        await update.message.reply_text('车站数据未加载，请先查询一次路线。')
+    link_hash = hashlib.md5(map_link.encode('utf-8')).hexdigest()
+    local_file_path = os.path.join('mtr-pathfinder', f'mtr-station-data-{link_hash}-mtr4-v4.json')
+    
+    logger.info(f'用户 {user_id} 更新车站数据：{map_link}')
+    await update.message.reply_text('正在更新车站数据，请稍候...')
+    
+    try:
+        from mtr_pathfinder_v4 import fetch_data
+        data = fetch_data(map_link, local_file_path, MAX_WILD_BLOCKS)
+        logger.info(f'用户 {user_id} 车站数据更新成功')
+    except Exception as e:
+        logger.error(f'用户 {user_id} 车站数据更新失败：{e}')
+        await update.message.reply_text('更新车站数据失败，请稍后重试。')
         return
     
     stations = data.get('stations', {})
