@@ -369,12 +369,9 @@ def fetch_data(link: str, LOCAL_FILE_PATH, MAX_WILD_BLOCKS) -> str:
                 data_new['transfer_dist'][x] = {}
 
             data_new['transfer_dist'][x][y] = distance
-
-    y = input(f'是否替换{LOCAL_FILE_PATH}文件? (Y/N) ').lower()
-    if y == 'y':
-        with open(LOCAL_FILE_PATH, 'w', encoding='utf-8') as f:
-            json.dump(data_new, f)
-
+    
+    with open(LOCAL_FILE_PATH, 'w', encoding='utf-8') as f:
+        json.dump(data_new, f)
     return data_new
 
 
@@ -398,11 +395,9 @@ def gen_departure(link: str, DEP_PATH) -> None:
 
         dep_list = list(sorted(dep_list))
         dep_dict[x['id']] = dep_list
-
-    y = input(f'是否替换{DEP_PATH}文件? (Y/N) ').lower()
-    if y == 'y':
-        with open(DEP_PATH, 'w', encoding='utf-8') as f:
-            json.dump(dep_dict, f)
+    
+    with open(DEP_PATH, 'w', encoding='utf-8') as f:
+        json.dump(dep_dict, f)
 
 
 def station_name_to_id(data: dict, sta: str, STATION_TABLE,
@@ -623,7 +618,7 @@ def load_tt(tt_dict: dict[tuple], data, start, end, departure_time: int,
     start_station = station_name_to_id(data, start, STATION_TABLE)
     end_station = station_name_to_id(data, end, STATION_TABLE)
     if not (start_station and end_station):
-        return []
+        return [], {}
 
     # 添加起点出站换乘
     ss = data['stations'][start_station]['station']
@@ -1063,19 +1058,15 @@ def main(station1: str, station2: str, LINK: str,
     if LINK.endswith('/index.html'):
         LINK = LINK.rstrip('/index.html')
 
-    if UPDATE_DATA is True or (not os.path.exists(LOCAL_FILE_PATH)):
-        if LINK == '':
-            raise ValueError('Railway System Map link is empty')
-
-        data = fetch_data(LINK, LOCAL_FILE_PATH, MAX_WILD_BLOCKS)
-    else:
-        with open(LOCAL_FILE_PATH, encoding='utf-8') as f:
-            data = json.load(f)
-
+    if LINK == '':
+        raise ValueError('Railway System Map link is empty')
+    
+    data = fetch_data(LINK, LOCAL_FILE_PATH, MAX_WILD_BLOCKS)
+    
     if GEN_DEPARTURE is True or (not os.path.exists(DEP_PATH)):
         if LINK == '':
             raise ValueError('Railway System Map link is empty')
-
+        
         gen_departure(LINK, DEP_PATH)
 
     version1 = strftime('%Y%m%d-%H%M',

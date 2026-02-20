@@ -77,7 +77,7 @@ WILD_ADDITION = {}
 STATION_TABLE = {}
 ORIGINAL_IGNORED_LINES = []
 
-UPDATE_DATA = False
+UPDATE_DATA = True
 GEN_DEPARTURE = False
 
 IGNORED_LINES = []
@@ -87,7 +87,7 @@ CALCULATE_BOAT = True
 CALCULATE_WALKING_WILD = False
 ONLY_LRT = False
 
-START_STATION, END_STATION, ROUTE_NAME, DEL_ROUTE_NAME = range(4)
+START_STATION, END_STATION, ROUTE_NAME, DEL_ROUTE_NAME, SET_MAP_LINK = range(5)
 
 
 def load_station_data():
@@ -116,7 +116,8 @@ def get_user_settings(user_id):
             'MAX_TRANSFERS': 10,
             'PREFER_FAST': True,
             'PREFER_LESS_TRANSFER': False,
-            'TIMEZONE': 8
+            'TIMEZONE': 8,
+            'MAP_LINK': 'http://leonmmcoset.jjxmm.win:8888'
         }
         user_data_manager.update_user_data(user_id, user_data)
     else:
@@ -131,6 +132,8 @@ def get_user_settings(user_id):
             settings['PREFER_LESS_TRANSFER'] = False
         if 'TIMEZONE' not in settings:
             settings['TIMEZONE'] = 8
+        if 'MAP_LINK' not in settings:
+            settings['MAP_LINK'] = 'http://leonmmcoset.jjxmm.win:8888'
         user_data['settings'] = settings
         user_data_manager.update_user_data(user_id, user_data)
     return user_data['settings']
@@ -213,6 +216,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🚉 车站信息
 /station <车站名> - 查询车站详情
 
+🗺️ 地图设置
+/setmap - 设置地图链接
+/seemap - 查看当前地图链接
+
 ⚙️ 设置
 /settings - 打开设置面板
 
@@ -248,11 +255,37 @@ async def end_station(update: Update, context: ContextTypes.DEFAULT_TYPE):
     settings = get_user_settings(user_id)
     
     logger.info(f'用户 {user_id} 查询路线：{start_station} → {end_station}')
+    logger.info(f'调用main函数参数：')
+    logger.info(f'  station1: {start_station}')
+    logger.info(f'  station2: {end_station}')
+    logger.info(f'  LINK: {settings["MAP_LINK"]}')
+    logger.info(f'  LOCAL_FILE_PATH: {LOCAL_FILE_PATH}')
+    logger.info(f'  DEP_PATH: {DEP_PATH}')
+    logger.info(f'  BASE_PATH: {BASE_PATH}')
+    logger.info(f'  PNG_PATH: {PNG_PATH}')
+    logger.info(f'  MAX_WILD_BLOCKS: {MAX_WILD_BLOCKS}')
+    logger.info(f'  TRANSFER_ADDITION: {TRANSFER_ADDITION}')
+    logger.info(f'  WILD_ADDITION: {WILD_ADDITION}')
+    logger.info(f'  STATION_TABLE: {STATION_TABLE}')
+    logger.info(f'  ORIGINAL_IGNORED_LINES: {ORIGINAL_IGNORED_LINES}')
+    logger.info(f'  UPDATE_DATA: {UPDATE_DATA}')
+    logger.info(f'  GEN_DEPARTURE: {GEN_DEPARTURE}')
+    logger.info(f'  IGNORED_LINES: {IGNORED_LINES}')
+    logger.info(f'  AVOID_STATIONS: {AVOID_STATIONS}')
+    logger.info(f'  CALCULATE_HIGH_SPEED: {settings["CALCULATE_HIGH_SPEED"]}')
+    logger.info(f'  CALCULATE_BOAT: {settings["CALCULATE_BOAT"]}')
+    logger.info(f'  CALCULATE_WALKING_WILD: {settings["CALCULATE_WALKING_WILD"]}')
+    logger.info(f'  ONLY_LRT: {settings["ONLY_LRT"]}')
+    logger.info(f'  DETAIL: {settings["DETAIL"]}')
+    logger.info(f'  MAX_HOUR: {settings["MAX_HOUR"]}')
+    logger.info(f'  gen_image: True')
+    logger.info(f'  show: False')
+    
     await update.message.reply_text('正在生成路线图，请稍候...')
     
     try:
         result = main(
-            start_station, end_station, LINK, LOCAL_FILE_PATH, DEP_PATH,
+            start_station, end_station, settings['MAP_LINK'], LOCAL_FILE_PATH, DEP_PATH,
             BASE_PATH, PNG_PATH, MAX_WILD_BLOCKS, TRANSFER_ADDITION,
             WILD_ADDITION, STATION_TABLE, ORIGINAL_IGNORED_LINES,
             UPDATE_DATA, GEN_DEPARTURE, IGNORED_LINES, AVOID_STATIONS,
@@ -271,6 +304,9 @@ async def end_station(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif result is None:
         logger.warning(f'用户 {user_id} 车站名称错误')
         await update.message.reply_text('车站输入错误，请重新输入。')
+    elif not isinstance(result, tuple) or len(result) != 2:
+        logger.error(f'用户 {user_id} 查询结果格式错误：{type(result)}')
+        await update.message.reply_text('查询结果格式错误，请稍后重试。')
     else:
         logger.info(f'用户 {user_id} 路线查询成功：{start_station} → {end_station}')
         add_to_history(user_id, start_station, end_station)
@@ -350,6 +386,10 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(
                 f"时区: UTC{'+' if settings['TIMEZONE'] >= 0 else ''}{settings['TIMEZONE']}", 
                 callback_data='change_TIMEZONE'
+            ),
+            InlineKeyboardButton(
+                f"地图链接: {'自定义' if settings['MAP_LINK'] != 'http://leonmmcoset.jjxmm.win:8888' else '默认'}", 
+                callback_data='toggle_MAP_LINK'
             )
         ],
         [InlineKeyboardButton("重置默认设置", callback_data='reset_settings')]
@@ -399,6 +439,13 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == 'change_TIMEZONE':
         settings['TIMEZONE'] = settings['TIMEZONE'] + 1 if settings['TIMEZONE'] < 12 else -12
         logger.info(f'用户 {user_id} 修改时区：UTC{settings["TIMEZONE"]}')
+    elif query.data == 'toggle_MAP_LINK':
+        if settings['MAP_LINK'] == 'http://leonmmcoset.jjxmm.win:8888':
+            await query.message.reply_text('请使用 /setmap 命令设置自定义地图链接。')
+            return
+        else:
+            settings['MAP_LINK'] = 'http://leonmmcoset.jjxmm.win:8888'
+            logger.info(f'用户 {user_id} 恢复默认地图链接')
     elif query.data == 'reset_settings':
         settings.update({
             'DETAIL': False,
@@ -411,7 +458,8 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'MAX_TRANSFERS': 10,
             'PREFER_FAST': True,
             'PREFER_LESS_TRANSFER': False,
-            'TIMEZONE': 8
+            'TIMEZONE': 8,
+            'MAP_LINK': 'http://leonmmcoset.jjxmm.win:8888'
         })
         logger.info(f'用户 {user_id} 重置设置')
     
@@ -472,6 +520,10 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(
                 f"时区: UTC{'+' if settings['TIMEZONE'] >= 0 else ''}{settings['TIMEZONE']}", 
                 callback_data='change_TIMEZONE'
+            ),
+            InlineKeyboardButton(
+                f"地图链接: {'自定义' if settings['MAP_LINK'] != 'http://leonmmcoset.jjxmm.win:8888' else '默认'}", 
+                callback_data='toggle_MAP_LINK'
             )
         ],
         [InlineKeyboardButton("重置默认设置", callback_data='reset_settings')]
@@ -519,11 +571,37 @@ async def history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     settings = get_user_settings(user_id)
     
     logger.info(f'用户 {user_id} 从历史查询：{route["start"]} → {route["end"]}')
+    logger.info(f'调用main函数参数：')
+    logger.info(f'  station1: {route["start"]}')
+    logger.info(f'  station2: {route["end"]}')
+    logger.info(f'  LINK: {settings["MAP_LINK"]}')
+    logger.info(f'  LOCAL_FILE_PATH: {LOCAL_FILE_PATH}')
+    logger.info(f'  DEP_PATH: {DEP_PATH}')
+    logger.info(f'  BASE_PATH: {BASE_PATH}')
+    logger.info(f'  PNG_PATH: {PNG_PATH}')
+    logger.info(f'  MAX_WILD_BLOCKS: {MAX_WILD_BLOCKS}')
+    logger.info(f'  TRANSFER_ADDITION: {TRANSFER_ADDITION}')
+    logger.info(f'  WILD_ADDITION: {WILD_ADDITION}')
+    logger.info(f'  STATION_TABLE: {STATION_TABLE}')
+    logger.info(f'  ORIGINAL_IGNORED_LINES: {ORIGINAL_IGNORED_LINES}')
+    logger.info(f'  UPDATE_DATA: {UPDATE_DATA}')
+    logger.info(f'  GEN_DEPARTURE: {GEN_DEPARTURE}')
+    logger.info(f'  IGNORED_LINES: {IGNORED_LINES}')
+    logger.info(f'  AVOID_STATIONS: {AVOID_STATIONS}')
+    logger.info(f'  CALCULATE_HIGH_SPEED: {settings["CALCULATE_HIGH_SPEED"]}')
+    logger.info(f'  CALCULATE_BOAT: {settings["CALCULATE_BOAT"]}')
+    logger.info(f'  CALCULATE_WALKING_WILD: {settings["CALCULATE_WALKING_WILD"]}')
+    logger.info(f'  ONLY_LRT: {settings["ONLY_LRT"]}')
+    logger.info(f'  DETAIL: {settings["DETAIL"]}')
+    logger.info(f'  MAX_HOUR: {settings["MAX_HOUR"]}')
+    logger.info(f'  gen_image: True')
+    logger.info(f'  show: False')
+    
     await query.edit_message_text(f'正在查询 {route["start"]} → {route["end"]}...')
     
     try:
         result = main(
-            route['start'], route['end'], LINK, LOCAL_FILE_PATH, DEP_PATH,
+            route['start'], route['end'], settings['MAP_LINK'], LOCAL_FILE_PATH, DEP_PATH,
             BASE_PATH, PNG_PATH, MAX_WILD_BLOCKS, TRANSFER_ADDITION,
             WILD_ADDITION, STATION_TABLE, ORIGINAL_IGNORED_LINES,
             UPDATE_DATA, GEN_DEPARTURE, IGNORED_LINES, AVOID_STATIONS,
@@ -542,6 +620,9 @@ async def history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif result is None:
         logger.warning(f'用户 {user_id} 历史查询车站名称错误')
         await query.message.reply_text('车站输入错误，请重新输入。')
+    elif not isinstance(result, tuple) or len(result) != 2:
+        logger.error(f'用户 {user_id} 历史查询结果格式错误：{type(result)}')
+        await query.message.reply_text('查询结果格式错误，请稍后重试。')
     else:
         logger.info(f'用户 {user_id} 历史查询成功')
         add_to_history(user_id, route['start'], route['end'])
@@ -607,7 +688,6 @@ async def route_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     route_name = context.args[0]
-    logger.info(f'用户 {user_id} 使用快捷命令：{route_name}')
     routes = get_user_routes(user_id)
     
     if route_name not in routes:
@@ -618,11 +698,38 @@ async def route_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     route = routes[route_name]
     settings = get_user_settings(user_id)
     
+    logger.info(f'用户 {user_id} 使用快捷命令：{route_name}')
+    logger.info(f'调用main函数参数：')
+    logger.info(f'  station1: {route["start"]}')
+    logger.info(f'  station2: {route["end"]}')
+    logger.info(f'  LINK: {settings["MAP_LINK"]}')
+    logger.info(f'  LOCAL_FILE_PATH: {LOCAL_FILE_PATH}')
+    logger.info(f'  DEP_PATH: {DEP_PATH}')
+    logger.info(f'  BASE_PATH: {BASE_PATH}')
+    logger.info(f'  PNG_PATH: {PNG_PATH}')
+    logger.info(f'  MAX_WILD_BLOCKS: {MAX_WILD_BLOCKS}')
+    logger.info(f'  TRANSFER_ADDITION: {TRANSFER_ADDITION}')
+    logger.info(f'  WILD_ADDITION: {WILD_ADDITION}')
+    logger.info(f'  STATION_TABLE: {STATION_TABLE}')
+    logger.info(f'  ORIGINAL_IGNORED_LINES: {ORIGINAL_IGNORED_LINES}')
+    logger.info(f'  UPDATE_DATA: {UPDATE_DATA}')
+    logger.info(f'  GEN_DEPARTURE: {GEN_DEPARTURE}')
+    logger.info(f'  IGNORED_LINES: {IGNORED_LINES}')
+    logger.info(f'  AVOID_STATIONS: {AVOID_STATIONS}')
+    logger.info(f'  CALCULATE_HIGH_SPEED: {settings["CALCULATE_HIGH_SPEED"]}')
+    logger.info(f'  CALCULATE_BOAT: {settings["CALCULATE_BOAT"]}')
+    logger.info(f'  CALCULATE_WALKING_WILD: {settings["CALCULATE_WALKING_WILD"]}')
+    logger.info(f'  ONLY_LRT: {settings["ONLY_LRT"]}')
+    logger.info(f'  DETAIL: {settings["DETAIL"]}')
+    logger.info(f'  MAX_HOUR: {settings["MAX_HOUR"]}')
+    logger.info(f'  gen_image: True')
+    logger.info(f'  show: False')
+    
     await update.message.reply_text(f'正在查询 {route["start"]} → {route["end"]}...')
     
     try:
         result = main(
-            route['start'], route['end'], LINK, LOCAL_FILE_PATH, DEP_PATH,
+            route['start'], route['end'], settings['MAP_LINK'], LOCAL_FILE_PATH, DEP_PATH,
             BASE_PATH, PNG_PATH, MAX_WILD_BLOCKS, TRANSFER_ADDITION,
             WILD_ADDITION, STATION_TABLE, ORIGINAL_IGNORED_LINES,
             UPDATE_DATA, GEN_DEPARTURE, IGNORED_LINES, AVOID_STATIONS,
@@ -641,6 +748,9 @@ async def route_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif result is None:
         logger.warning(f'用户 {user_id} 快捷命令查询车站名称错误')
         await update.message.reply_text('车站输入错误，请重新输入。')
+    elif not isinstance(result, tuple) or len(result) != 2:
+        logger.error(f'用户 {user_id} 快捷命令查询结果格式错误：{type(result)}')
+        await update.message.reply_text('查询结果格式错误，请稍后重试。')
     else:
         logger.info(f'用户 {user_id} 快捷命令查询成功')
         add_to_history(user_id, route['start'], route['end'])
@@ -844,6 +954,53 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 
+async def set_map_link_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    logger.info(f'用户 {user_id} 开始设置地图链接')
+    await update.message.reply_text('请输入新的地图链接：')
+    return SET_MAP_LINK
+
+
+async def set_map_link_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    new_link = update.message.text.strip()
+    
+    if not new_link:
+        logger.warning(f'用户 {user_id} 地图链接为空')
+        await update.message.reply_text('地图链接不能为空。')
+        return ConversationHandler.END
+    
+    logger.info(f'用户 {user_id} 设置地图链接：{new_link}')
+    
+    settings = get_user_settings(user_id)
+    settings['MAP_LINK'] = new_link
+    save_user_settings(user_id, settings)
+    
+    await update.message.reply_text(f'✅ 地图链接已更新为：{new_link}')
+    return ConversationHandler.END
+
+
+async def see_map_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    logger.info(f'用户 {user_id} 查看地图链接')
+    
+    settings = get_user_settings(user_id)
+    current_link = settings['MAP_LINK']
+    
+    is_default = current_link == 'http://leonmmcoset.jjxmm.win:8888'
+    
+    text = f'🗺️ 当前地图链接\n\n'
+    text += f'📍 链接：{current_link}\n'
+    text += f'📌 类型：{"默认" if is_default else "自定义"}\n\n'
+    
+    if is_default:
+        text += '💡 使用 /setmap 命令可以设置自定义地图链接。'
+    else:
+        text += '💡 在设置面板中点击"地图链接"按钮可以恢复默认链接。'
+    
+    await update.message.reply_text(text)
+
+
 def main_bot():
     TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
     if not TOKEN:
@@ -879,15 +1036,25 @@ def main_bot():
         fallbacks=[CommandHandler('cancel', cancel)],
     )
     
+    set_map_link_conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('setmap', set_map_link_start)],
+        states={
+            SET_MAP_LINK: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_map_link_end)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+    )
+    
     application.add_handler(conv_handler)
     application.add_handler(add_route_conv_handler)
     application.add_handler(del_route_conv_handler)
+    application.add_handler(set_map_link_conv_handler)
     application.add_handler(CommandHandler('start', start_command))
     application.add_handler(CommandHandler('station', station_command))
     application.add_handler(CommandHandler('search', search_command))
     application.add_handler(CommandHandler('settings', settings))
     application.add_handler(CommandHandler('history', history))
     application.add_handler(CommandHandler('route', route_command))
+    application.add_handler(CommandHandler('seemap', see_map_link))
     application.add_handler(CallbackQueryHandler(settings_callback, pattern='^toggle_|^change_|^reset_'))
     application.add_handler(CallbackQueryHandler(history_callback, pattern='^history_'))
     
