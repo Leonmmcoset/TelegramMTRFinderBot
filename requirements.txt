@@ -1,0 +1,7 @@
+fonttools
+networkx
+OpenCC==1.1.1
+Pillow
+Requests
+python-telegram-bot
+python-dotenv

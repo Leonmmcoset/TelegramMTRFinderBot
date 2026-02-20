@@ -1,0 +1,6 @@
+/.env
+/bot.log
+/mtr_pathfinder_temp/
+/user_data.json
+/venv
+/pngs
