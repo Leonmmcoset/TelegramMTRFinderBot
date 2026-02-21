@@ -222,6 +222,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🚉 车站信息
 /station <车站名> - 查询车站详情
 
+🚃 线路信息
+/line <线路名> - 查询线路详情
+
 🗺️ 地图设置
 /setmap - 设置地图链接
 /seemap - 查看当前地图链接
@@ -890,6 +893,91 @@ async def station_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 
+async def line_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    
+    if not context.args:
+        logger.info(f'用户 {user_id} 查看线路信息帮助')
+        await update.message.reply_text('用法：/line <线路名>\n例如：/line 莱恩再新城线')
+        return
+    
+    line_name = ' '.join(context.args)
+    logger.info(f'用户 {user_id} 查询线路信息：{line_name}')
+    
+    settings = get_user_settings(user_id)
+    map_link = settings['MAP_LINK']
+    
+    link_hash = hashlib.md5(map_link.encode('utf-8')).hexdigest()
+    local_file_path = os.path.join('mtr-pathfinder', f'mtr-station-data-{link_hash}-mtr4-v4.json')
+    
+    logger.info(f'用户 {user_id} 更新车站数据：{map_link}')
+    await update.message.reply_text('正在更新车站数据，请稍候...')
+    
+    try:
+        from mtr_pathfinder_v4 import fetch_data
+        data = fetch_data(map_link, local_file_path, MAX_WILD_BLOCKS)
+        logger.info(f'用户 {user_id} 车站数据更新成功')
+    except Exception as e:
+        logger.error(f'用户 {user_id} 车站数据更新失败：{e}')
+        await update.message.reply_text('更新车站数据失败，请稍后重试。')
+        return
+    
+    routes = data.get('routes', {})
+    route_id = None
+    
+    for rid, route_info in routes.items():
+        if line_name.lower() in route_info.get('name', '').lower():
+            route_id = rid
+            break
+    
+    if not route_id:
+        logger.warning(f'用户 {user_id} 线路不存在：{line_name}')
+        await update.message.reply_text(f'找不到线路 "{line_name}"。')
+        return
+    
+    route_info = routes[route_id]
+    route_name_display = route_info['name'].replace('|', ' / ')
+    route_type = route_info.get('type', 'unknown')
+    route_number = route_info.get('number', '')
+    
+    type_emoji = {
+        'train_normal': '🚂',
+        'train_high_speed': '🚄',
+        'train_light_rail': '🚃',
+        'boat_normal': '⛴',
+        'boat_high_speed': '🚤',
+        'boat_light_rail': '🚥',
+        'cable_car_normal': '🚠',
+        'airplane_normal': '✈️'
+    }.get(route_type, '🚂')
+    
+    stations = route_info.get('stations', [])
+    
+    text = f'🚃 线路信息\n\n'
+    text += f'📍 线路名称：{route_name_display}\n'
+    text += f'🆔 线路ID：{route_id}\n'
+    text += f'🔢 线路编号：{route_number}\n'
+    text += f'🚂 线路类型：{type_emoji} {route_type}\n'
+    text += f'🚉 车站数量：{len(stations)}\n\n'
+    
+    if stations:
+        text += f'🚉 经过车站：\n'
+        for i, station_info in enumerate(stations, 1):
+            if isinstance(station_info, dict):
+                station_id = station_info.get('id')
+            else:
+                station_id = station_info
+            
+            if station_id and station_id in data['stations']:
+                station_name = data['stations'][station_id]['name'].replace('|', ' / ')
+                text += f'{i}. {station_name}\n'
+    else:
+        text += '🚉 经过车站：无\n'
+    
+    logger.info(f'用户 {user_id} 线路信息查询成功：{line_name}')
+    await update.message.reply_text(text)
+
+
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
@@ -1078,6 +1166,7 @@ def main_bot():
     application.add_handler(set_map_link_conv_handler)
     application.add_handler(CommandHandler('start', start_command))
     application.add_handler(CommandHandler('station', station_command))
+    application.add_handler(CommandHandler('line', line_command))
     application.add_handler(CommandHandler('search', search_command))
     application.add_handler(CommandHandler('settings', settings))
     application.add_handler(CommandHandler('history', history))
