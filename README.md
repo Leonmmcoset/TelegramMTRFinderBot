@@ -12,6 +12,7 @@ pip install -r requirements.txt
 
 1. 复制 `.env.example` 为 `.env`
 2. 在 `.env` 中设置你的 Telegram Bot Token
+3. （可选）在 `.env` 中设置 Telegram Base URL，默认为 `https://api.telegram.org/bot`
 
 ## 运行
 
@@ -41,6 +42,14 @@ python telegram_bot.py
 - `/line <线路名>` - 查询线路详情
 - 显示线路名称、编号、类型
 - 显示经过该线路的所有车站
+
+### 统计信息
+
+- `/count` - 查看统计信息
+- 显示车站总数
+- 显示线路总数
+- 显示线路类型分布
+- 显示数据来源和更新时间
 
 ### 搜索
 

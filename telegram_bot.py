@@ -225,7 +225,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🚃 线路信息
 /line <线路名> - 查询线路详情
 
-🗺️ 地图设置
+🔢 统计信息
+/count - 查看统计信息
+
+🛣️ 地图设置
 /setmap - 设置地图链接
 /seemap - 查看当前地图链接
 
@@ -1070,6 +1073,78 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 
+async def count_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    logger.info(f'用户 {user_id} 查看统计信息')
+    
+    settings = get_user_settings(user_id)
+    map_link = settings['MAP_LINK']
+    
+    link_hash = hashlib.md5(map_link.encode('utf-8')).hexdigest()
+    local_file_path = os.path.join('mtr-pathfinder', f'mtr-station-data-{link_hash}-mtr4-v4.json')
+    
+    logger.info(f'用户 {user_id} 更新车站数据：{map_link}')
+    await update.message.reply_text('正在更新车站数据，请稍候...')
+    
+    try:
+        from mtr_pathfinder_v4 import fetch_data
+        data = fetch_data(map_link, local_file_path, MAX_WILD_BLOCKS)
+        logger.info(f'用户 {user_id} 车站数据更新成功')
+    except Exception as e:
+        logger.error(f'用户 {user_id} 车站数据更新失败：{e}')
+        await update.message.reply_text('更新车站数据失败，请稍后重试。')
+        return
+    
+    stations = data.get('stations', {})
+    routes = data.get('routes', {})
+    
+    total_stations = len(stations)
+    total_routes = len(routes)
+    
+    route_types = {}
+    for route_id, route_info in routes.items():
+        route_type = route_info.get('type', 'unknown')
+        route_types[route_type] = route_types.get(route_type, 0) + 1
+    
+    type_emoji = {
+        'train_normal': '🚂',
+        'train_high_speed': '🚄',
+        'train_light_rail': '🚃',
+        'boat_normal': '⛴',
+        'boat_high_speed': '🚤',
+        'boat_light_rail': '🚥',
+        'cable_car_normal': '🚠',
+        'airplane_normal': '✈️'
+    }
+    
+    type_name = {
+        'train_normal': '普通列车',
+        'train_high_speed': '高铁',
+        'train_light_rail': '轻轨',
+        'boat_normal': '普通船',
+        'boat_high_speed': '高速船',
+        'boat_light_rail': '轻轨船',
+        'cable_car_normal': '缆车',
+        'airplane_normal': '飞机'
+    }
+    
+    text = f'📊 统计信息\n\n'
+    text += f'🚉 车站总数：{total_stations}\n'
+    text += f'🚃 线路总数：{total_routes}\n\n'
+    
+    text += f'📈 线路类型分布：\n'
+    for route_type, count in sorted(route_types.items(), key=lambda x: x[1], reverse=True):
+        emoji = type_emoji.get(route_type, '🚂')
+        name = type_name.get(route_type, route_type)
+        text += f'{emoji} {name}：{count}条\n'
+    
+    text += f'\n🗺️ 数据来源：{map_link}\n'
+    text += f'📅 更新时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
+    
+    logger.info(f'用户 {user_id} 统计信息查询成功')
+    await update.message.reply_text(text)
+
+
 async def set_map_link_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     logger.info(f'用户 {user_id} 开始设置地图链接')
@@ -1123,7 +1198,8 @@ def main_bot():
         print('请设置环境变量 TELEGRAM_BOT_TOKEN')
         return
     
-    application = Application.builder().token(TOKEN).base_url('https://r8gmzg.mc-cloud.org/bot').build()
+    BASE_URL = os.getenv('TELEGRAM_BASE_URL', 'https://api.telegram.org/bot')
+    application = Application.builder().token(TOKEN).base_url(BASE_URL).build()
     
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('path', path_start)],
@@ -1168,6 +1244,7 @@ def main_bot():
     application.add_handler(CommandHandler('station', station_command))
     application.add_handler(CommandHandler('line', line_command))
     application.add_handler(CommandHandler('search', search_command))
+    application.add_handler(CommandHandler('count', count_command))
     application.add_handler(CommandHandler('settings', settings))
     application.add_handler(CommandHandler('history', history))
     application.add_handler(CommandHandler('route', route_command))
