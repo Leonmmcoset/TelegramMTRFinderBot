@@ -804,9 +804,9 @@ def process_path(result: list[tuple], start: str, end: str,
 def save_image(route_type: RouteType, every_route_time: list,
                BASE_PATH, version1, version2,
                PNG_PATH, departure_time,
-               show=False) -> tuple[Image.Image, str]:
+               show=False, map_link: str = None) -> tuple[Image.Image, str]:
     '''
-    Save the image of the route.
+    Save image of the route.
     '''
     pattern = []
     pattern.append(
@@ -842,14 +842,15 @@ def save_image(route_type: RouteType, every_route_time: list,
     # 总时长从出发时间开始算，不从发车时间开始算
     full_time = every_route_time[-1][6] - departure_time
     return generate_image(pattern, route_type, BASE_PATH,
-                          version1, version2, full_time, show)
+                          version1, version2, full_time, show, map_link)
 
 
 def calculate_height_width(pattern: list[list[ImagePattern]],
                            route_type, final_str: str,
-                           final_str_size: int, BASE_PATH) -> tuple[int]:
+                           final_str_size: int, BASE_PATH,
+                           map_link: str = None) -> tuple[int]:
     '''
-    Calculate the width and the height of the image.
+    Calculate the width and height of the image.
     '''
     text_size = 20
     font = ImageFont.truetype(BASE_PATH + os.sep + 'fonts' + os.sep +
@@ -864,8 +865,13 @@ def calculate_height_width(pattern: list[list[ImagePattern]],
                        ImagePattern.THUMB_TEXT,
                        ImagePattern.THUMB_INTEND_TEXT]]
     route_len_list += [font.getlength(x[2]) + int(x[0].value) for x in pattern
-                       if x[0] in [ImagePattern.THUMB_TEXT,
-                                   ImagePattern.THUMB_INTEND_TEXT]]
+                      if x[0] in [ImagePattern.THUMB_TEXT,
+                                  ImagePattern.THUMB_INTEND_TEXT]]
+    
+    if map_link:
+        map_link_text = f'地图链接 Map Link: {map_link}'
+        route_len_list.append(font2.getlength(map_link_text))
+    
     if route_type != RouteType.IN_THEORY:
         len_final_str = font2.getlength(final_str) + 40
         if max(route_len_list) > len_final_str:
@@ -878,6 +884,9 @@ def calculate_height_width(pattern: list[list[ImagePattern]],
     height = (len([x for x in pattern
                    if x[0] not in [ImagePattern.FAKE_STATION,
                                    ImagePattern.OR]]) + 1) * 30 + 48 + 10
+    
+    if map_link:
+        height += 30
 
     return (width + 10, height)
 
@@ -898,7 +907,7 @@ def draw_text(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str,
 
 def generate_image(pattern, route_type, BASE_PATH, version1, version2,
                    shortest_distance,
-                   show: bool = False) -> tuple[Image.Image, str]:
+                   show: bool = False, map_link: str = None) -> tuple[Image.Image, str]:
     '''
     Generate the image with PIL.
     '''
@@ -927,7 +936,7 @@ def generate_image(pattern, route_type, BASE_PATH, version1, version2,
     image = Image.new('RGB',
                       calculate_height_width(pattern, route_type,
                                              final_str, final_str_size,
-                                             BASE_PATH),
+                                             BASE_PATH, map_link),
                       color='white')
     draw = ImageDraw.Draw(image)
     y = last_y = 10
@@ -997,6 +1006,11 @@ def generate_image(pattern, route_type, BASE_PATH, version1, version2,
     y += 24
     draw_text(draw, (10, y), f'路线数据版本 Route data version: {version2}',
               'black', fonts, 16)
+    y += 30
+    
+    if map_link:
+        draw_text(draw, (10, y), f'地图链接 Map Link: {map_link}',
+                  'blue', fonts, 16)
 
     output_buffer = BytesIO()
     image.save(output_buffer, 'png')
@@ -1032,13 +1046,16 @@ def main(station1: str, station2: str, LINK: str,
          CALCULATE_WALKING_WILD: bool = False, ONLY_LRT: bool = False,
          DETAIL: bool = False, MAX_HOUR=3, timetable=None, gen_image=True,
          show=False, departure_time=None, tz=0,
-         timeout_min=2) -> Union[tuple[Image.Image, str], bool, None]:
+         timeout_min=2, map_link: str = None) -> Union[tuple[Image.Image, str], bool, None]:
     '''
     Main function. You can call it in your own code.
     Output:
     False -- Route not found 找不到路线
     None -- Incorrect station name(s) 车站输入错误，请重新输入
     else 其他 -- base64 str of the generated image 生成图片的 base64 字符串
+    
+    Parameters:
+    map_link -- Map link to display in the image (optional)
     '''
     if departure_time is None:
         dtz = timezone(timedelta(hours=tz))
@@ -1108,7 +1125,7 @@ def main(station1: str, station2: str, LINK: str,
         return ert[0]
 
     return save_image(route_type, ert, BASE_PATH, version1, version2,
-                      PNG_PATH, departure_time, show)
+                      PNG_PATH, departure_time, show, map_link)
 
 
 def run():

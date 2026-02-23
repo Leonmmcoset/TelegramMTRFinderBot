@@ -123,7 +123,12 @@ def get_user_settings(user_id):
             'PREFER_FAST': True,
             'PREFER_LESS_TRANSFER': False,
             'TIMEZONE': 8,
-            'MAP_LINK': 'http://leonmmcoset.jjxmm.win:8888'
+            'MAP_LINK': 'http://leonmmcoset.jjxmm.win:8888',
+            'HISTORY_LIMIT': 10,
+            'DEFAULT_DEPARTURE': 'current',
+            'SHOW_MAP_LINK': True,
+            'AUTO_UPDATE': True,
+            'SHOW_STATION_CODE': True
         }
         user_data_manager.update_user_data(user_id, user_data)
     else:
@@ -140,6 +145,16 @@ def get_user_settings(user_id):
             settings['TIMEZONE'] = 8
         if 'MAP_LINK' not in settings:
             settings['MAP_LINK'] = 'http://leonmmcoset.jjxmm.win:8888'
+        if 'HISTORY_LIMIT' not in settings:
+            settings['HISTORY_LIMIT'] = 10
+        if 'DEFAULT_DEPARTURE' not in settings:
+            settings['DEFAULT_DEPARTURE'] = 'current'
+        if 'SHOW_MAP_LINK' not in settings:
+            settings['SHOW_MAP_LINK'] = True
+        if 'AUTO_UPDATE' not in settings:
+            settings['AUTO_UPDATE'] = True
+        if 'SHOW_STATION_CODE' not in settings:
+            settings['SHOW_STATION_CODE'] = True
         user_data['settings'] = settings
         user_data_manager.update_user_data(user_id, user_data)
     return user_data['settings']
@@ -164,6 +179,9 @@ def add_to_history(user_id, start_station, end_station):
     if 'history' not in user_data:
         user_data['history'] = []
     
+    settings = get_user_settings(user_id)
+    history_limit = settings.get('HISTORY_LIMIT', 10)
+    
     history = user_data['history']
     route = {
         'start': start_station,
@@ -178,7 +196,7 @@ def add_to_history(user_id, start_station, end_station):
     
     history.insert(0, route)
     
-    if len(history) > 10:
+    if len(history) > history_limit:
         history.pop()
     
     user_data['history'] = history
@@ -208,7 +226,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /path - 查询两个车站之间的路线
 
 📜 历史记录
-/history - 查看最近10条查询历史
+/history - 查看最近查询历史
 
 🚀 快捷命令
 /addroute - 添加快捷命令
@@ -234,6 +252,23 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 ⚙️ 设置
 /settings - 打开设置面板
+  - 历史记录：5/10/15/20/30/50条
+  - 出发时间：当前时间/固定时间
+  - 显示地图：是否在结果中显示地图链接
+  - 自动更新：是否自动更新车站数据
+  - 显示代码：是否显示车站代码
+  - 详细模式：显示详细路线信息
+  - 高铁：是否包含高铁路线
+  - 船：是否包含船运路线
+  - 越野步行：是否包含越野步行路线
+  - 仅轻轨：是否仅查询轻轨路线
+  - 最大时长：1-12小时
+  - 最小时长：0-12小时
+  - 最大换乘：0-20次
+  - 优先快速：优先选择快速路线
+  - 优先少换乘：优先选择少换乘路线
+  - 时区：UTC-12到UTC+12
+  - 地图链接：默认/自定义
 
 ❓ 其他
 /start - 显示此帮助信息
@@ -280,7 +315,7 @@ async def end_station(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f'  WILD_ADDITION: {WILD_ADDITION}')
     logger.info(f'  STATION_TABLE: {STATION_TABLE}')
     logger.info(f'  ORIGINAL_IGNORED_LINES: {ORIGINAL_IGNORED_LINES}')
-    logger.info(f'  UPDATE_DATA: {UPDATE_DATA}')
+    logger.info(f'  UPDATE_DATA: {settings["AUTO_UPDATE"]}')
     logger.info(f'  GEN_DEPARTURE: {GEN_DEPARTURE}')
     logger.info(f'  IGNORED_LINES: {IGNORED_LINES}')
     logger.info(f'  AVOID_STATIONS: {AVOID_STATIONS}')
@@ -296,14 +331,16 @@ async def end_station(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('正在生成路线图，请稍候...')
     
     try:
+        map_link = settings['MAP_LINK'] if settings['SHOW_MAP_LINK'] else None
         result = main(
             start_station, end_station, settings['MAP_LINK'], LOCAL_FILE_PATH, DEP_PATH,
             BASE_PATH, PNG_PATH, MAX_WILD_BLOCKS, TRANSFER_ADDITION,
             WILD_ADDITION, STATION_TABLE, ORIGINAL_IGNORED_LINES,
-            UPDATE_DATA, GEN_DEPARTURE, IGNORED_LINES, AVOID_STATIONS,
+            settings['AUTO_UPDATE'], GEN_DEPARTURE, IGNORED_LINES, AVOID_STATIONS,
             settings['CALCULATE_HIGH_SPEED'], settings['CALCULATE_BOAT'], 
             settings['CALCULATE_WALKING_WILD'], settings['ONLY_LRT'], 
-            settings['DETAIL'], settings['MAX_HOUR'], gen_image=True, show=False
+            settings['DETAIL'], settings['MAX_HOUR'], gen_image=True, show=False,
+            map_link=map_link
         )
     except Exception as e:
         logger.error(f'用户 {user_id} 查询路线失败：{e}')
@@ -342,6 +379,11 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     logger.info(f'用户 {user_id} 打开设置')
     settings = get_user_settings(user_id)
+    
+    departure_names = {
+        'current': '当前时间',
+        'fixed': '固定时间'
+    }
     
     keyboard = [
         [
@@ -404,6 +446,32 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 callback_data='toggle_MAP_LINK'
             )
         ],
+        [
+            InlineKeyboardButton(
+                f"历史记录: {settings['HISTORY_LIMIT']}条", 
+                callback_data='change_HISTORY_LIMIT'
+            ),
+            InlineKeyboardButton(
+                f"出发时间: {departure_names.get(settings['DEFAULT_DEPARTURE'], settings['DEFAULT_DEPARTURE'])}", 
+                callback_data='change_DEFAULT_DEPARTURE'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                f"显示地图: {'✅' if settings['SHOW_MAP_LINK'] else '❌'}", 
+                callback_data='toggle_SHOW_MAP_LINK'
+            ),
+            InlineKeyboardButton(
+                f"自动更新: {'✅' if settings['AUTO_UPDATE'] else '❌'}", 
+                callback_data='toggle_AUTO_UPDATE'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                f"显示代码: {'✅' if settings['SHOW_STATION_CODE'] else '❌'}", 
+                callback_data='toggle_SHOW_STATION_CODE'
+            )
+        ],
         [InlineKeyboardButton("重置默认设置", callback_data='reset_settings')]
     ]
     
@@ -417,6 +485,11 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = update.effective_user.id
     settings = get_user_settings(user_id)
+    
+    departure_names = {
+        'current': '当前时间',
+        'fixed': '固定时间'
+    }
     
     if query.data == 'toggle_DETAIL':
         settings['DETAIL'] = not settings['DETAIL']
@@ -458,6 +531,23 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             settings['MAP_LINK'] = 'http://leonmmcoset.jjxmm.win:8888'
             logger.info(f'用户 {user_id} 恢复默认地图链接')
+    elif query.data == 'change_HISTORY_LIMIT':
+        limits = [5, 10, 15, 20, 30, 50]
+        current_index = limits.index(settings['HISTORY_LIMIT']) if settings['HISTORY_LIMIT'] in limits else 0
+        settings['HISTORY_LIMIT'] = limits[(current_index + 1) % len(limits)]
+        logger.info(f'用户 {user_id} 修改历史记录数量：{settings["HISTORY_LIMIT"]}')
+    elif query.data == 'change_DEFAULT_DEPARTURE':
+        settings['DEFAULT_DEPARTURE'] = 'fixed' if settings['DEFAULT_DEPARTURE'] == 'current' else 'current'
+        logger.info(f'用户 {user_id} 修改默认出发时间：{settings["DEFAULT_DEPARTURE"]}')
+    elif query.data == 'toggle_SHOW_MAP_LINK':
+        settings['SHOW_MAP_LINK'] = not settings['SHOW_MAP_LINK']
+        logger.info(f'用户 {user_id} 切换显示地图链接：{settings["SHOW_MAP_LINK"]}')
+    elif query.data == 'toggle_AUTO_UPDATE':
+        settings['AUTO_UPDATE'] = not settings['AUTO_UPDATE']
+        logger.info(f'用户 {user_id} 切换自动更新：{settings["AUTO_UPDATE"]}')
+    elif query.data == 'toggle_SHOW_STATION_CODE':
+        settings['SHOW_STATION_CODE'] = not settings['SHOW_STATION_CODE']
+        logger.info(f'用户 {user_id} 切换显示车站代码：{settings["SHOW_STATION_CODE"]}')
     elif query.data == 'reset_settings':
         settings.update({
             'DETAIL': False,
@@ -471,7 +561,12 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'PREFER_FAST': True,
             'PREFER_LESS_TRANSFER': False,
             'TIMEZONE': 8,
-            'MAP_LINK': 'http://leonmmcoset.jjxmm.win:8888'
+            'MAP_LINK': 'http://leonmmcoset.jjxmm.win:8888',
+            'HISTORY_LIMIT': 10,
+            'DEFAULT_DEPARTURE': 'current',
+            'SHOW_MAP_LINK': True,
+            'AUTO_UPDATE': True,
+            'SHOW_STATION_CODE': True
         })
         logger.info(f'用户 {user_id} 重置设置')
     
@@ -538,6 +633,32 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 callback_data='toggle_MAP_LINK'
             )
         ],
+        [
+            InlineKeyboardButton(
+                f"历史记录: {settings['HISTORY_LIMIT']}条", 
+                callback_data='change_HISTORY_LIMIT'
+            ),
+            InlineKeyboardButton(
+                f"出发时间: {departure_names.get(settings['DEFAULT_DEPARTURE'], settings['DEFAULT_DEPARTURE'])}", 
+                callback_data='change_DEFAULT_DEPARTURE'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                f"显示地图: {'✅' if settings['SHOW_MAP_LINK'] else '❌'}", 
+                callback_data='toggle_SHOW_MAP_LINK'
+            ),
+            InlineKeyboardButton(
+                f"自动更新: {'✅' if settings['AUTO_UPDATE'] else '❌'}", 
+                callback_data='toggle_AUTO_UPDATE'
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                f"显示代码: {'✅' if settings['SHOW_STATION_CODE'] else '❌'}", 
+                callback_data='toggle_SHOW_STATION_CODE'
+            )
+        ],
         [InlineKeyboardButton("重置默认设置", callback_data='reset_settings')]
     ]
     
@@ -547,13 +668,15 @@ async def settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    settings = get_user_settings(user_id)
+    history_limit = settings.get('HISTORY_LIMIT', 10)
     history = get_user_history(user_id)
     
     if not history:
         await update.message.reply_text('暂无查询历史。')
         return
     
-    text = '📜 查询历史（最近10条）：\n\n'
+    text = f'📜 查询历史（最近{history_limit}条）：\n\n'
     keyboard = []
     
     for i, route in enumerate(history, 1):
@@ -596,7 +719,7 @@ async def history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f'  WILD_ADDITION: {WILD_ADDITION}')
     logger.info(f'  STATION_TABLE: {STATION_TABLE}')
     logger.info(f'  ORIGINAL_IGNORED_LINES: {ORIGINAL_IGNORED_LINES}')
-    logger.info(f'  UPDATE_DATA: {UPDATE_DATA}')
+    logger.info(f'  UPDATE_DATA: {settings["AUTO_UPDATE"]}')
     logger.info(f'  GEN_DEPARTURE: {GEN_DEPARTURE}')
     logger.info(f'  IGNORED_LINES: {IGNORED_LINES}')
     logger.info(f'  AVOID_STATIONS: {AVOID_STATIONS}')
@@ -612,14 +735,16 @@ async def history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f'正在查询 {route["start"]} → {route["end"]}...')
     
     try:
+        map_link = settings['MAP_LINK'] if settings['SHOW_MAP_LINK'] else None
         result = main(
             route['start'], route['end'], settings['MAP_LINK'], LOCAL_FILE_PATH, DEP_PATH,
             BASE_PATH, PNG_PATH, MAX_WILD_BLOCKS, TRANSFER_ADDITION,
             WILD_ADDITION, STATION_TABLE, ORIGINAL_IGNORED_LINES,
-            UPDATE_DATA, GEN_DEPARTURE, IGNORED_LINES, AVOID_STATIONS,
+            settings['AUTO_UPDATE'], GEN_DEPARTURE, IGNORED_LINES, AVOID_STATIONS,
             settings['CALCULATE_HIGH_SPEED'], settings['CALCULATE_BOAT'], 
             settings['CALCULATE_WALKING_WILD'], settings['ONLY_LRT'], 
-            settings['DETAIL'], settings['MAX_HOUR'], gen_image=True, show=False
+            settings['DETAIL'], settings['MAX_HOUR'], gen_image=True, show=False,
+            map_link=map_link
         )
     except Exception as e:
         logger.error(f'用户 {user_id} 历史查询失败：{e}')
@@ -724,7 +849,7 @@ async def route_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f'  WILD_ADDITION: {WILD_ADDITION}')
     logger.info(f'  STATION_TABLE: {STATION_TABLE}')
     logger.info(f'  ORIGINAL_IGNORED_LINES: {ORIGINAL_IGNORED_LINES}')
-    logger.info(f'  UPDATE_DATA: {UPDATE_DATA}')
+    logger.info(f'  UPDATE_DATA: {settings["AUTO_UPDATE"]}')
     logger.info(f'  GEN_DEPARTURE: {GEN_DEPARTURE}')
     logger.info(f'  IGNORED_LINES: {IGNORED_LINES}')
     logger.info(f'  AVOID_STATIONS: {AVOID_STATIONS}')
@@ -740,14 +865,16 @@ async def route_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f'正在查询 {route["start"]} → {route["end"]}...')
     
     try:
+        map_link = settings['MAP_LINK'] if settings['SHOW_MAP_LINK'] else None
         result = main(
             route['start'], route['end'], settings['MAP_LINK'], LOCAL_FILE_PATH, DEP_PATH,
             BASE_PATH, PNG_PATH, MAX_WILD_BLOCKS, TRANSFER_ADDITION,
             WILD_ADDITION, STATION_TABLE, ORIGINAL_IGNORED_LINES,
-            UPDATE_DATA, GEN_DEPARTURE, IGNORED_LINES, AVOID_STATIONS,
+            settings['AUTO_UPDATE'], GEN_DEPARTURE, IGNORED_LINES, AVOID_STATIONS,
             settings['CALCULATE_HIGH_SPEED'], settings['CALCULATE_BOAT'], 
             settings['CALCULATE_WALKING_WILD'], settings['ONLY_LRT'], 
-            settings['DETAIL'], settings['MAX_HOUR'], gen_image=True, show=False
+            settings['DETAIL'], settings['MAX_HOUR'], gen_image=True, show=False,
+            map_link=map_link
         )
     except Exception as e:
         logger.error(f'用户 {user_id} 快捷命令查询失败：{e}')
@@ -830,6 +957,7 @@ async def station_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     settings = get_user_settings(user_id)
     map_link = settings['MAP_LINK']
+    show_code = settings.get('SHOW_STATION_CODE', True)
     
     link_hash = hashlib.md5(map_link.encode('utf-8')).hexdigest()
     local_file_path = os.path.join('mtr-pathfinder', f'mtr-station-data-{link_hash}-mtr4-v4.json')
@@ -861,7 +989,9 @@ async def station_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = f'🚉 车站信息\n\n'
     text += f'📍 车站名称：{station_name_display}\n'
-    text += f'🆔 车站ID：{station_info["station"]}\n\n'
+    if show_code:
+        text += f'🆔 车站ID：{station_info["station"]}\n'
+    text += '\n'
     
     if routes:
         text += f'🚃 经过路线：\n'
@@ -994,6 +1124,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     settings = get_user_settings(user_id)
     map_link = settings['MAP_LINK']
+    show_code = settings.get('SHOW_STATION_CODE', True)
     
     link_hash = hashlib.md5(map_link.encode('utf-8')).hexdigest()
     local_file_path = os.path.join('mtr-pathfinder', f'mtr-station-data-{link_hash}-mtr4-v4.json')
@@ -1046,7 +1177,10 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f'🚉 车站（{len(station_results)}个）：\n'
         for i, station in enumerate(station_results[:10], 1):
             station_name_display = station['name'].replace('|', ' / ')
-            text += f'{i}. {station_name_display} (ID: {station["station_code"]})\n'
+            if show_code:
+                text += f'{i}. {station_name_display} (ID: {station["station_code"]})\n'
+            else:
+                text += f'{i}. {station_name_display}\n'
         if len(station_results) > 10:
             text += f'... 还有 {len(station_results) - 10} 个车站\n'
         text += '\n'
